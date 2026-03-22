@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus: AI Frame Interpolation Engine</title>
+    <style>
+        :root {
+            --bg-base: #050508;
+            --surface-color: rgba(18, 18, 25, 0.6);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --neon-blue: #00e5ff;
+            --neon-purple: #b400ff;
+            --text-primary: #ffffff;
+            --text-secondary: #8a8a9e;
+            --success: #00ff88;
+            --error: #ff3366;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; }
+
+        body {
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 20% 0%, rgba(0, 229, 255, 0.05), transparent 40%),
+                radial-gradient(circle at 80% 100%, rgba(180, 0, 255, 0.05), transparent 40%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .app-container { width: 100%; max-width: 1200px; display: flex; flex-direction: column; gap: 1.5rem; }
+
+        header { text-align: center; margin-bottom: 1rem; }
+        h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.05em; background: linear-gradient(to right, var(--neon-blue), var(--neon-purple)); -webkit-background-clip: text; color: transparent; }
+        .subtitle { color: var(--text-secondary); font-size: 0.95rem; margin-top: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
+
+        .glass-card {
+            background: var(--surface-color); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color); border-radius: 16px; padding: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+
+        /* Upload Zones */
+        .upload-zone {
+            border: 1px dashed rgba(255,255,255,0.15); border-radius: 12px; height: 220px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; position: relative; overflow: hidden; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(0,0,0,0.2);
+        }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--neon-blue); background: rgba(0, 229, 255, 0.03); }
+        .upload-zone svg { width: 48px; height: 48px; fill: var(--text-secondary); transition: fill 0.3s; z-index: 2; pointer-events: none; }
+        .upload-zone:hover svg { fill: var(--neon-blue); }
+        .upload-zone span { margin-top: 12px; font-size: 0.9rem; color: var(--text-secondary); z-index: 2; pointer-events: none; }
+        .upload-zone input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 3; }
+        .preview-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; display: none; }
+
+        /* Inputs */
+        .input-group { margin-bottom: 1rem; }
+        input[type="text"], input[type="password"], input[type="url"], select, textarea {
+            width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-primary); padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.95rem;
+            transition: all 0.3s; outline: none;
+        }
+        textarea { resize: vertical; min-height: 80px; }
+        input:focus, select:focus, textarea:focus { border-color: var(--neon-purple); box-shadow: 0 0 0 2px rgba(180, 0, 255, 0.1); }
+
+        /* Buttons */
+        .btn-primary {
+            width: 100%; padding: 1rem; border: none; border-radius: 8px; font-size: 1rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.05em; color: white; cursor: pointer;
+            background: linear-gradient(45deg, var(--neon-blue), var(--neon-purple));
+            background-size: 200% auto; transition: 0.5s; position: relative; overflow: hidden;
+        }
+        .btn-primary:hover:not(:disabled) { background-position: right center; box-shadow: 0 0 20px rgba(180, 0, 255, 0.4); }
+        .btn-primary:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
+
+        .btn-secondary {
+            background: rgba(0,0,0,0.5); border: 1px solid var(--neon-purple); color: var(--text-primary);
+            padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.3s;
+            text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; white-space: nowrap;
+        }
+        .btn-secondary:hover:not(:disabled) { background: rgba(180, 0, 255, 0.1); box-shadow: 0 0 15px rgba(180, 0, 255, 0.3); }
+        .btn-secondary:disabled { border-color: #555; color: #555; cursor: not-allowed; }
+
+        /* Console / Pipeline Data */
+        .pipeline-console {
+            background: #0a0a0f; border: 1px solid var(--border-color); border-radius: 8px;
+            padding: 1rem; font-family: 'Courier New', Courier, monospace; font-size: 0.85rem;
+            color: var(--success); max-height: 200px; overflow-y: auto; display: none;
+            margin-top: 1rem; box-shadow: inset 0 0 10px rgba(0,0,0,0.8); white-space: pre-wrap;
+        }
+
+        /* Progress */
+        .progress-wrapper { display: none; margin-top: 1.5rem; }
+        .status-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--neon-blue); }
+        .progress-track { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple)); transition: width 0.2s ease; }
+
+        /* Timeline */
+        .timeline-container { margin-top: 1.5rem; display: none; }
+        .timeline-strip {
+            display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px;
+            scrollbar-width: thin; scrollbar-color: var(--neon-purple) transparent;
+        }
+        .timeline-strip::-webkit-scrollbar { height: 4px; }
+        .timeline-strip::-webkit-scrollbar-thumb { background: var(--neon-purple); border-radius: 2px; }
+        .timeline-strip img { height: 70px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); object-fit: cover; }
+
+        /* Output & API Section */
+        .output-container { display: none; flex-direction: column; gap: 1.5rem; margin-top: 1.5rem; }
+        video { width: 100%; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 20px 50px rgba(0,0,0,0.5); background: #000; }
+        
+        .action-bar { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: flex-end; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
+        .api-save-box { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 0.5rem; }
+        .api-input-row { display: flex; gap: 0.5rem; }
+        .api-status { font-size: 0.85rem; min-height: 20px; font-weight: 600; }
+        .status-success { color: var(--success); }
+        .status-error { color: var(--error); }
+        .status-pending { color: var(--neon-blue); }
+
+        .btn-download {
+            background: transparent; border: 1px solid var(--neon-blue); color: var(--neon-blue);
+            padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.3s;
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; height: 46px; white-space: nowrap;
+        }
+        .btn-download:hover { background: rgba(0, 229, 255, 0.1); box-shadow: 0 0 15px rgba(0, 229, 255, 0.3); }
+
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <h1>Nexus.AI</h1>
+        <div class="subtitle">Cinematic Frame Interpolation Engine</div>
+    </header>
+
+    <div class="glass-card">
+        <div class="input-group">
+            <label>Gemini API Key (Optional / Simulator Mode Active)</label>
+            <input type="password" id="api-key" placeholder="sk-...">
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="glass-card">
+            <label>Start Frame (Scene A)</label>
+            <div class="upload-zone" id="zone-start">
+                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                <span>Drop Image or Click</span>
+                <input type="file" id="file-start" accept="image/jpeg, image/png, image/webp">
+                <img id="preview-start" class="preview-img">
+            </div>
+        </div>
+        <div class="glass-card">
+            <label>End Frame (Scene B)</label>
+            <div class="upload-zone" id="zone-end">
+                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                <span>Drop Image or Click</span>
+                <input type="file" id="file-end" accept="image/jpeg, image/png, image/webp">
+                <img id="preview-end" class="preview-img">
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card grid-2">
+        <div>
+            <div class="input-group">
+                <label>Consistency Anchor (Subject/Object)</label>
+                <input type="text" id="anchor" placeholder="e.g., 'The glowing cyber-car'">
+            </div>
+            <div class="input-group">
+                <label>Negative Prompt</label>
+                <input type="text" id="negative-prompt" value="distortion, flicker, extra limbs, breaking perspective, noise, low resolution" readonly style="color:var(--text-secondary)">
+            </div>
+            <div class="grid-2" style="gap: 1rem;">
+                <div class="input-group">
+                    <label>Duration</label>
+                    <select id="duration">
+                        <option value="3">3 Seconds (Fast)</option>
+                        <option value="5" selected>5 Seconds (Standard)</option>
+                        <option value="8">8 Seconds (Smooth)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Framerate</label>
+                    <select id="framerate">
+                        <option value="24" selected>24 FPS (Cinematic)</option>
+                        <option value="30">30 FPS (Digital)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="input-group" style="height: 100%;">
+                <label>Cinematic Intent (Story & Motion)</label>
+                <textarea id="intent" placeholder="Describe the camera motion, lighting shift, and environmental transition..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-primary" id="btn-generate">Initialize Render Pipeline</button>
+
+    <div class="glass-card progress-wrapper" id="progress-wrapper">
+        <div class="status-header">
+            <span id="status-text">SYSTEM STANDBY</span>
+            <span id="status-percent">0%</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        
+        <div class="pipeline-console" id="pipeline-console"></div>
+
+        <div class="timeline-container" id="timeline-container">
+            <label>Latent Space Frames</label>
+            <div class="timeline-strip" id="timeline-strip"></div>
+        </div>
+    </div>
+
+    <div class="glass-card output-container" id="output-container">
+        <label>Rendered Output</label>
+        <video id="output-video" controls loop playsinline></video>
+        
+        <div class="action-bar">
+            <a id="btn-download" class="btn-download" download="Nexus_Render.webm">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Save Locally
+            </a>
+
+            <div class="api-save-box">
+                <label style="margin: 0;">Export to Cloud / Custom API</label>
+                <div class="api-input-row">
+                    <input type="url" id="api-endpoint" placeholder="https://api.yourbackend.com/v1/videos" value="https://jsonplaceholder.typicode.com/posts">
+                    <button id="btn-api-save" class="btn-secondary">Push to Server</button>
+                </div>
+                <div id="api-status" class="api-status"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- APP STATE ---
+    const state = {
+        startImg: null,
+        endImg: null,
+        isGenerating: false,
+        frames: [],
+        videoBlob: null, // Added to store the generated video for the API upload
+        resolution: { w: 1280, h: 720 }
+    };
+
+    // --- DOM REFERENCES ---
+    const dom = {
+        fileStart: document.getElementById('file-start'), previewStart: document.getElementById('preview-start'), zoneStart: document.getElementById('zone-start'),
+        fileEnd: document.getElementById('file-end'), previewEnd: document.getElementById('preview-end'), zoneEnd: document.getElementById('zone-end'),
+        anchor: document.getElementById('anchor'), intent: document.getElementById('intent'),
+        duration: document.getElementById('duration'), framerate: document.getElementById('framerate'),
+        btnGenerate: document.getElementById('btn-generate'),
+        progWrapper: document.getElementById('progress-wrapper'), statusText: document.getElementById('status-text'),
+        progFill: document.getElementById('progress-fill'), progPercent: document.getElementById('status-percent'),
+        console: document.getElementById('pipeline-console'),
+        timelineCont: document.getElementById('timeline-container'), timelineStrip: document.getElementById('timeline-strip'),
+        outCont: document.getElementById('output-container'), video: document.getElementById('output-video'), btnDownload: document.getElementById('btn-download'),
+        
+        // API specific DOM elements
+        apiEndpoint: document.getElementById('api-endpoint'),
+        btnApiSave: document.getElementById('btn-api-save'),
+        apiStatus: document.getElementById('api-status')
+    };
+
+    // --- FILE HANDLING ---
+    const setupUpload = (fileInput, previewImg, zone, stateKey) => {
+        const processFile = (file) => {
+            if (!file || !file.type.startsWith('image/')) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                previewImg.style.display = 'block';
+                state[stateKey] = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+        fileInput.addEventListener('change', e => processFile(e.target.files[0]));
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); processFile(e.dataTransfer.files[0]); });
+    };
+
+    setupUpload(dom.fileStart, dom.previewStart, dom.zoneStart, 'startImg');
+    setupUpload(dom.fileEnd, dom.previewEnd, dom.zoneEnd, 'endImg');
+
+    // --- UTILS ---
+    const logConsole = (msg) => {
+        const time = new Date().toISOString().split('T')[1].slice(0,-1);
+        dom.console.innerText += `\n[${time}] ${msg}`;
+        dom.console.scrollTop = dom.console.scrollHeight;
+    };
+
+    const updateProgress = (text, percent) => {
+        dom.statusText.innerText = text;
+        dom.progPercent.innerText = `${Math.round(percent)}%`;
+        dom.progFill.style.width = `${percent}%`;
+    };
+
+    // --- PIPELINE STEP 1 & 2: GEMINI VISION ANALYSIS & PROMPT GEN ---
+    const executeVisionAnalysis = async () => {
+        logConsole("INITIATING STEP 1: Gemini Vision Scene Analysis...");
+        await new Promise(r => setTimeout(r, 800));
+        
+        const anchor = dom.anchor.value || "Primary subjects";
+        const intent = dom.intent.value || "Smooth linear transition";
+        
+        const metadataJSON = {
+            "scene_a": { "depth": "shallow", "lighting": "key-left", "objects": [anchor] },
+            "scene_b": { "depth": "infinite", "lighting": "ambient", "objects": [anchor] },
+            "motion_vector": "pan_forward_blend"
+        };
+        
+        logConsole(`VISION METADATA EXTRACTED:\n${JSON.stringify(metadataJSON, null, 2)}`);
+        logConsole("INITIATING STEP 2: Building Consistent Prompt Engine...");
+        await new Promise(r => setTimeout(r, 600));
+
+        return `[MASTER PROMPT] Create a smooth cinematic transition from Scene A to Scene B. \nMaintain identity: ${anchor}. \nIntent: ${intent}. \nGradually morph environment naturally matching depth vectors. \nNegative constraints: distortion, flicker, extra limbs.`;
+    };
+
+    // --- PIPELINE STEP 3 & 4: GENERATION & MOTION SMOOTHING ---
+    const generateFrames = async (duration, fps) => {
+        logConsole("INITIATING STEP 3 & 4: Rendering Latent Interpolation Frames...");
+        dom.timelineCont.style.display = 'block';
+        
+        return new Promise((resolve) => {
+            const totalFrames = duration * fps;
+            state.frames = [];
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = state.resolution.w; canvas.height = state.resolution.h;
+            
+            const img1 = new Image(); const img2 = new Image();
+            img1.src = state.startImg; img2.src = state.endImg;
+
+            Promise.all([new Promise(r => img1.onload = r), new Promise(r => img2.onload = r)]).then(() => {
+                let frameIdx = 0;
+                
+                const renderNext = () => {
+                    if (frameIdx >= totalFrames) { resolve(); return; }
+                    
+                    const progress = frameIdx / (totalFrames - 1);
+                    const easeProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                    
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    const scale1 = 1 + (easeProgress * 0.05);
+                    const scale2 = 1.05 - (easeProgress * 0.05);
+                    
+                    ctx.globalAlpha = 1;
+                    ctx.save();
+                    ctx.translate(canvas.width/2, canvas.height/2);
+                    ctx.scale(scale1, scale1);
+                    ctx.drawImage(img1, -canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
+                    ctx.restore();
+                    
+                    ctx.globalAlpha = easeProgress;
+                    ctx.save();
+                    ctx.translate(canvas.width/2, canvas.height/2);
+                    ctx.scale(scale2, scale2);
+                    ctx.drawImage(img2, -canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
+                    ctx.restore();
+                    
+                    const dataUrl = canvas.toDataURL('image/webp', 0.9);
+                    state.frames.push(dataUrl);
+                    
+                    updateProgress(`Rendering Frame ${frameIdx+1}/${totalFrames}`, (frameIdx/totalFrames) * 60);
+                    
+                    if (frameIdx % (fps/2) === 0) {
+                        const thumb = document.createElement('img');
+                        thumb.src = dataUrl;
+                        dom.timelineStrip.appendChild(thumb);
+                    }
+
+                    frameIdx++;
+                    setTimeout(renderNext, 0);
+                };
+                renderNext();
+            });
+        });
+    };
+
+    // --- PIPELINE STEP 5: VIDEO COMPILATION ---
+    const compileVideo = async (fps) => {
+        logConsole("INITIATING STEP 5: Multiplexing WEBM Video via Canvas MediaRecorder...");
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = state.resolution.w; canvas.height = state.resolution.h;
+            
+            const stream = canvas.captureStream(fps);
+            const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 });
+            const chunks = [];
+
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }));
+            recorder.start();
+
+            let fIdx = 0;
+            const drawFrameToRecorder = () => {
+                if (fIdx >= state.frames.length) { recorder.stop(); return; }
+                
+                const img = new Image();
+                img.onload = () => {
+                    ctx.globalAlpha = 1;
+                    ctx.drawImage(img, 0, 0);
+                    fIdx++;
+                    updateProgress(`Multiplexing Video...`, 60 + ((fIdx/state.frames.length) * 40));
+                    setTimeout(drawFrameToRecorder, 1000/fps);
+                };
+                img.src = state.frames[fIdx];
+            };
+            drawFrameToRecorder();
+        });
+    };
+
+    // --- MAIN GENERATION ROUTINE ---
+    dom.btnGenerate.addEventListener('click', async () => {
+        if (!state.startImg || !state.endImg) return alert("System requires both Start and End spatial frames.");
+        
+        dom.btnGenerate.disabled = true;
+        dom.btnGenerate.innerText = "Processing...";
+        dom.outCont.style.display = 'none';
+        dom.progWrapper.style.display = 'block';
+        dom.console.style.display = 'block';
+        dom.timelineStrip.innerHTML = '';
+        dom.apiStatus.innerText = ''; // Clear API status
+        dom.console.innerText = "=== NEXUS PIPELINE INITIALIZED ===";
+        updateProgress("Warming up tensors...", 0);
+
+        try {
+            const duration = parseInt(dom.duration.value);
+            const fps = parseInt(dom.framerate.value);
+
+            await executeVisionAnalysis();
+            await generateFrames(duration, fps);
+            state.videoBlob = await compileVideo(fps); // Save blob to state for API
+
+            logConsole("PIPELINE COMPLETE. Video asset ready.");
+            updateProgress("Render Complete", 100);
+
+            const url = URL.createObjectURL(state.videoBlob);
+            dom.video.src = url;
+            dom.btnDownload.href = url;
+            dom.outCont.style.display = 'flex';
+            
+            setTimeout(() => { dom.video.play(); }, 500);
+
+        } catch (e) {
+            logConsole(`CRITICAL ERROR: ${e.message}`);
+            alert("Render Failed. See console logs.");
+        } finally {
+            dom.btnGenerate.disabled = false;
+            dom.btnGenerate.innerText = "Initialize Render Pipeline";
+        }
+    });
+
+    // --- CLOUD API EXPORT LOGIC ---
+    dom.btnApiSave.addEventListener('click', async () => {
+        if (!state.videoBlob) return;
+
+        const endpoint = dom.apiEndpoint.value.trim();
+        if (!endpoint) {
+            dom.apiStatus.className = 'api-status status-error';
+            dom.apiStatus.innerText = 'Error: Please enter a valid API Endpoint URL.';
+            return;
+        }
+
+        dom.btnApiSave.disabled = true;
+        dom.btnApiSave.innerText = "Uploading...";
+        dom.apiStatus.className = 'api-status status-pending';
+        dom.apiStatus.innerText = 'Packaging video and metadata...';
+
+        try {
+            // 1. Prepare Payload using FormData (ideal for files)
+            const formData = new FormData();
+            
+            // Attach the raw video blob
+            formData.append('video_file', state.videoBlob, `Nexus_Render_${Date.now()}.webm`);
+            
+            // Attach metadata alongside the file
+            formData.append('anchor', dom.anchor.value || "Primary subjects");
+            formData.append('intent', dom.intent.value || "Smooth linear transition");
+            formData.append('duration', dom.duration.value);
+            
+            // Note: If you have a real API key, you'd add it to headers or form data depending on your backend
+            // const apiKey = dom.document.getElementById('api-key').value;
+
+            dom.apiStatus.innerText = 'Establishing connection & uploading...';
+
+            // 2. Execute HTTP POST Request
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                // headers: { 'Authorization': `Bearer ${apiKey}` }, // Optional: If your backend needs auth
+                body: formData 
+            });
+
+            if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+
+            const responseData = await response.json(); // Assuming JSON response from your API
+
+            dom.apiStatus.className = 'api-status status-success';
+            dom.apiStatus.innerText = `Success! Video saved to cloud. (ID: ${responseData.id || 'N/A'})`;
+            logConsole(`API EXPORT SUCCESS: Payload sent to ${endpoint}`);
+
+        } catch (error) {
+            dom.apiStatus.className = 'api-status status-error';
+            dom.apiStatus.innerText = `Upload Failed: ${error.message}`;
+            logConsole(`API EXPORT FAILED: ${error.message}`);
+        } finally {
+            dom.btnApiSave.disabled = false;
+            dom.btnApiSave.innerText = "Push to Server";
+        }
+    });
+</script>
+</body>
+</html>

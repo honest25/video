@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Frame-to-Video Generator (VEO Style)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-black text-white min-h-screen p-6">
+
+<div class="max-w-5xl mx-auto">
+    <h1 class="text-3xl font-bold mb-4">🎬 AI Cinematic Video Generator</h1>
+
+    <!-- Inputs -->
+    <div class="grid grid-cols-2 gap-4">
+        <input type="file" id="startImg" class="bg-gray-800 p-2">
+        <input type="file" id="endImg" class="bg-gray-800 p-2">
+    </div>
+
+    <textarea id="prompt" class="w-full mt-4 p-3 bg-gray-900" rows="3"
+        placeholder="Enter cinematic scene..."></textarea>
+
+    <div class="flex gap-4 mt-3">
+        <input type="number" id="frames" value="12" class="p-2 bg-gray-800">
+        <select id="fps" class="p-2 bg-gray-800">
+            <option>12</option>
+            <option>24</option>
+            <option>30</option>
+        </select>
+    </div>
+
+    <button onclick="generateVideo()"
+        class="mt-4 px-6 py-2 bg-blue-600 rounded">
+        Generate Video
+    </button>
+
+    <!-- Output -->
+    <div class="mt-6">
+        <video id="video" controls class="w-full"></video>
+    </div>
+</div>
+
+<script>
+const API_KEY = "PASTE_YOUR_KEY";
+
+function toBase64(file) {
+    return new Promise((res) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.readAsDataURL(file);
+    });
+}
+
+// Flow AI style structured prompt
+function buildPrompt(userPrompt, frameIndex, total) {
+    return `
+Cinematic video generation.
+
+Scene: ${userPrompt}
+
+Frame ${frameIndex} of ${total}
+
+Requirements:
+- Smooth transition
+- Maintain character consistency
+- Realistic motion
+- Cinematic lighting
+- High detail
+`;
+}
+
+// Simulated VEO API call
+async function callVeo(prompt, startImg, endImg) {
+
+    try {
+        const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/veo-fast:generateVideo?key=${API_KEY}`,
+            {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    input: {
+                        text: prompt,
+                        images: [startImg, endImg]
+                    }
+                })
+            }
+        );
+
+        const data = await res.json();
+
+        if (data.video) return data.video;
+
+    } catch (e) {
+        console.log("VEO failed → fallback mode");
+    }
+
+    return null;
+}
+
+// Canvas fallback (Flow AI style)
+async function generateFallback(startImgEl, endImgEl, frameCount, fps) {
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = 512;
+    canvas.height = 512;
+
+    const stream = canvas.captureStream(fps);
+    const recorder = new MediaRecorder(stream);
+    let chunks = [];
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+
+    recorder.start();
+
+    for (let i = 0; i < frameCount; i++) {
+
+        let alpha = i / frameCount;
+
+        ctx.globalAlpha = 1;
+        ctx.drawImage(startImgEl, 0, 0, 512, 512);
+
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(endImgEl, 0, 0, 512, 512);
+
+        await new Promise(r => setTimeout(r, 1000 / fps));
+    }
+
+    recorder.stop();
+
+    return new Promise(resolve => {
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, {type: "video/webm"});
+            resolve(URL.createObjectURL(blob));
+        };
+    });
+}
+
+async function generateVideo() {
+
+    const startFile = document.getElementById("startImg").files[0];
+    const endFile = document.getElementById("endImg").files[0];
+
+    const prompt = document.getElementById("prompt").value;
+    const frames = parseInt(document.getElementById("frames").value);
+    const fps = parseInt(document.getElementById("fps").value);
+
+    const startBase64 = await toBase64(startFile);
+    const endBase64 = await toBase64(endFile);
+
+    // Try VEO
+    let veoVideo = await callVeo(prompt, startBase64, endBase64);
+
+    if (veoVideo) {
+        document.getElementById("video").src = veoVideo;
+        return;
+    }
+
+    // Fallback
+    const startImgEl = new Image();
+    const endImgEl = new Image();
+
+    startImgEl.src = URL.createObjectURL(startFile);
+    endImgEl.src = URL.createObjectURL(endFile);
+
+    await new Promise(r => startImgEl.onload = r);
+    await new Promise(r => endImgEl.onload = r);
+
+    const videoURL = await generateFallback(startImgEl, endImgEl, frames, fps);
+
+    document.getElementById("video").src = videoURL;
+}
+</script>
+
+</body>
+</html>

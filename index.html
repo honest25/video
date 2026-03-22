@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Frame-to-Video Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Glassmorphism utilities */
+        .glass {
+            background: rgba(31, 41, 55, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white min-h-screen font-sans antialiased p-4 md:p-8">
+
+    <script>
+        // SECURITY NOTE: In a real frontend-only app, never hardcode a real key here.
+        // We will read from the UI input for testing.
+        const DEFAULT_API_KEY = "USER_WILL_INSERT";
+    </script>
+
+    <div class="max-w-6xl mx-auto space-y-8">
+        
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 tracking-tight">
+                Cinematic Frame Interpolator
+            </h1>
+            <p class="text-gray-400 text-sm md:text-base">Powered by Gemini 1.5 Pro & HTML5 Canvas</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div class="lg:col-span-2 space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="glass rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden group h-64 border-dashed hover:border-blue-500/50 transition-colors">
+                        <input type="file" id="startImage" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="startPlaceholder" class="flex flex-col items-center text-gray-500 group-hover:text-blue-400 transition-colors">
+                            <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <span class="font-medium">Upload START Frame</span>
+                        </div>
+                        <img id="startPreview" class="absolute inset-0 w-full h-full object-cover hidden" alt="Start Frame">
+                    </div>
+
+                    <div class="glass rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden group h-64 border-dashed hover:border-purple-500/50 transition-colors">
+                        <input type="file" id="endImage" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="endPlaceholder" class="flex flex-col items-center text-gray-500 group-hover:text-purple-400 transition-colors">
+                            <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <span class="font-medium">Upload END Frame</span>
+                        </div>
+                        <img id="endPreview" class="absolute inset-0 w-full h-full object-cover hidden" alt="End Frame">
+                    </div>
+                </div>
+
+                <div class="glass rounded-2xl p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Scene Description / Prompt</label>
+                        <textarea id="prompt" rows="3" class="w-full bg-gray-900/50 border border-gray-700 rounded-xl p-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none" placeholder="Describe the cinematic transition, lighting, and motion..."></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Frames</label>
+                            <input type="number" id="frameCount" value="10" min="2" max="60" class="w-full bg-gray-900/50 border border-gray-700 rounded-xl p-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">FPS</label>
+                            <select id="fpsSelect" class="w-full bg-gray-900/50 border border-gray-700 rounded-xl p-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="10">10 FPS</option>
+                                <option value="24" selected>24 FPS (Cinematic)</option>
+                                <option value="30">30 FPS</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Resolution</label>
+                            <select id="resSelect" class="w-full bg-gray-900/50 border border-gray-700 rounded-xl p-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="854x480">480p (Fast)</option>
+                                <option value="1280x720" selected>720p (HD)</option>
+                                <option value="1920x1080">1080p (FHD)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-2">
+                        <label class="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" id="cinematicMode" class="form-checkbox h-5 w-5 text-blue-500 rounded border-gray-700 bg-gray-900/50" checked>
+                            <span class="text-sm font-medium text-gray-300">Cinematic Mode (Enhance Prompts)</span>
+                        </label>
+                        
+                        <div class="flex items-center space-x-2">
+                            <input type="password" id="apiKeyInput" placeholder="Gemini API Key" class="bg-gray-900/50 border border-gray-700 rounded-xl p-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500 w-48">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass rounded-2xl p-6 flex flex-col h-full">
+                <div class="flex-grow space-y-6">
+                    <h3 class="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2">Status</h3>
+                    
+                    <div id="statusContainer" class="hidden space-y-4">
+                        <div class="flex justify-between text-sm">
+                            <span id="statusText" class="text-blue-400">Initializing...</span>
+                            <span id="progressText" class="text-gray-400">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+                            <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div id="errorContainer" class="hidden bg-red-500/10 border border-red-500/50 rounded-xl p-4 text-red-400 text-sm"></div>
+                </div>
+
+                <button id="generateBtn" class="w-full mt-6 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 hover:from-blue-500 to-purple-600 hover:to-purple-500 shadow-lg shadow-blue-900/20 transform transition-all active:scale-[0.98]">
+                    Generate Video
+                </button>
+            </div>
+        </div>
+
+        <div id="outputSection" class="hidden space-y-8 animate-[fadeIn_0.5s_ease-out]">
+            
+            <div class="space-y-3">
+                <h3 class="text-lg font-semibold text-gray-200">Generated Frames (Simulation)</h3>
+                <div id="frameGrid" class="flex space-x-4 overflow-x-auto pb-4 hide-scrollbar snap-x">
+                    </div>
+            </div>
+
+            <div class="glass rounded-2xl p-6 flex flex-col items-center space-y-6">
+                <h2 class="text-2xl font-bold text-white">Final Output</h2>
+                <div class="w-full max-w-4xl bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-800">
+                    <video id="finalVideo" controls class="w-full h-auto aspect-video" autoplay loop></video>
+                </div>
+                <a id="downloadBtn" class="px-8 py-3 rounded-xl font-bold text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 transition-colors flex items-center space-x-2 hidden">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <span>Download .webm</span>
+                </a>
+            </div>
+        </div>
+
+        <canvas id="renderCanvas" class="hidden"></canvas>
+    </div>
+
+    <script>
+        // --- State Management ---
+        let startImageBase64 = null;
+        let endImageBase64 = null;
+        let generatedFrames = []; // Will store base64 data URLs
+        
+        // --- DOM Elements ---
+        const els = {
+            startInput: document.getElementById('startImage'),
+            endInput: document.getElementById('endImage'),
+            startPreview: document.getElementById('startPreview'),
+            endPreview: document.getElementById('endPreview'),
+            startPlaceholder: document.getElementById('startPlaceholder'),
+            endPlaceholder: document.getElementById('endPlaceholder'),
+            prompt: document.getElementById('prompt'),
+            frameCount: document.getElementById('frameCount'),
+            fpsSelect: document.getElementById('fpsSelect'),
+            resSelect: document.getElementById('resSelect'),
+            cinematicMode: document.getElementById('cinematicMode'),
+            apiKeyInput: document.getElementById('apiKeyInput'),
+            generateBtn: document.getElementById('generateBtn'),
+            statusContainer: document.getElementById('statusContainer'),
+            statusText: document.getElementById('statusText'),
+            progressBar: document.getElementById('progressBar'),
+            progressText: document.getElementById('progressText'),
+            errorContainer: document.getElementById('errorContainer'),
+            outputSection: document.getElementById('outputSection'),
+            frameGrid: document.getElementById('frameGrid'),
+            finalVideo: document.getElementById('finalVideo'),
+            downloadBtn: document.getElementById('downloadBtn'),
+            renderCanvas: document.getElementById('renderCanvas')
+        };
+
+        // --- Image Handling ---
+        const handleImageUpload = (input, preview, placeholder, isStart) => {
+            input.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const base64 = event.target.result;
+                    preview.src = base64;
+                    preview.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                    
+                    if (isStart) startImageBase64 = base64;
+                    else endImageBase64 = base64;
+                };
+                reader.readAsDataURL(file);
+            });
+        };
+
+        handleImageUpload(els.startInput, els.startPreview, els.startPlaceholder, true);
+        handleImageUpload(els.endInput, els.endPreview, els.endPlaceholder, false);
+
+        // --- Helper: Strip Base64 Prefix for API ---
+        const stripBase64Prefix = (dataUrl) => dataUrl.split(',')[1];
+
+        // --- Helper: Delay ---
+        const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+        // --- Gemini API Call ---
+        async function callGemini(apiKey, promptText, startB64, endB64) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: promptText },
+                        { inline_data: { mime_type: "image/jpeg", data: stripBase64Prefix(startB64) } },
+                        { inline_data: { mime_type: "image/jpeg", data: stripBase64Prefix(endB64) } }
+                    ]
+                }],
+                generationConfig: { temperature: 0.7 }
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error?.message || 'API request failed');
+            }
+
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        // --- Simulated Frame Generator (Since Gemini outputs text, not images) ---
+        // We use canvas to blend the start/end images based on progress, and overlay the Gemini text.
+        async function createSimulatedFrame(startSrc, endSrc, progress, text, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            // Load images
+            const loadImg = (src) => new Promise((res) => { const img = new Image(); img.onload = () => res(img); img.src = src; });
+            const [startImg, endImg] = await Promise.all([loadImg(startSrc), loadImg(endSrc)]);
+
+            // Draw blended background
+            ctx.globalAlpha = 1 - progress;
+            ctx.drawImage(startImg, 0, 0, width, height);
+            ctx.globalAlpha = progress;
+            ctx.drawImage(endImg, 0, 0, width, height);
+            
+            // Draw overlay to make text readable
+            ctx.globalAlpha = 0.6;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, height - 100, width, 100);
+
+            // Draw Gemini Text
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.textAlign = 'center';
+            // Truncate text for aesthetics
+            const shortText = text.substring(0, 80) + '...';
+            ctx.fillText(shortText, width / 2, height - 40);
+
+            return canvas.toDataURL('image/jpeg', 0.8);
+        }
+
+        // --- Main Generation Loop ---
+        els.generateBtn.addEventListener('click', async () => {
+            // Validation
+            if (!startImageBase64 || !endImageBase64) return showError('Please upload both Start and End frames.');
+            
+            const apiKey = els.apiKeyInput.value.trim() || DEFAULT_API_KEY;
+            if (apiKey === "USER_WILL_INSERT") return showError('Please enter a valid Gemini API Key.');
+
+            const numFrames = parseInt(els.frameCount.value, 10);
+            const userPrompt = els.prompt.value.trim() || 'A smooth transition';
+            const isCinematic = els.cinematicMode.checked;
+            
+            const [resW, resH] = els.resSelect.value.split('x').map(Number);
+            els.renderCanvas.width = resW;
+            els.renderCanvas.height = resH;
+
+            // UI Reset
+            els.errorContainer.classList.add('hidden');
+            els.statusContainer.classList.remove('hidden');
+            els.outputSection.classList.remove('hidden');
+            els.frameGrid.innerHTML = '';
+            els.generateBtn.disabled = true;
+            els.generateBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            generatedFrames = [];
+
+            try {
+                // Loop to generate frames
+                for (let i = 1; i <= numFrames; i++) {
+                    els.statusText.innerText = `Generating Frame ${i} of ${numFrames}...`;
+                    const progressPercent = Math.round((i / numFrames) * 100);
+                    els.progressBar.style.width = `${progressPercent}%`;
+                    els.progressText.innerText = `${progressPercent}%`;
+
+                    // Construct prompt
+                    let aiPrompt = `Create a detailed description for a transitional frame between two scenes. Start image and End image are provided. Scene description: ${userPrompt}. This is frame ${i} of ${numFrames}. Describe exactly what this specific frame looks like. Keep it under 2 sentences.`;
+                    
+                    if (isCinematic) {
+                        aiPrompt += " Ensure cinematic lighting, realistic motion progression, volumetric fog, and 8k hyper-detailed aesthetic.";
+                    }
+
+                    // 1. Call Gemini for frame description
+                    let frameDescription = "Simulated transition..."; // Fallback
+                    try {
+                         frameDescription = await callGemini(apiKey, aiPrompt, startImageBase64, endImageBase64);
+                    } catch (e) {
+                         console.warn(`Gemini API failed for frame ${i}, falling back to visual blend. Error:`, e);
+                    }
+
+                    // 2. Simulate Image Generation (Create the actual base64 frame)
+                    const blendRatio = i / numFrames;
+                    const frameDataUrl = await createSimulatedFrame(startImageBase64, endImageBase64, blendRatio, frameDescription, resW, resH);
+                    
+                    generatedFrames.push(frameDataUrl);
+
+                    // 3. Update Gallery UI
+                    const imgEl = document.createElement('img');
+                    imgEl.src = frameDataUrl;
+                    imgEl.className = 'h-32 w-auto rounded-lg object-cover shadow-md snap-center flex-shrink-0 border border-gray-700';
+                    els.frameGrid.appendChild(imgEl);
+
+                    // 4. Rate limiting buffer
+                    if (i < numFrames) await delay(500); 
+                }
+
+                els.statusText.innerText = "Compiling Video...";
+                await compileVideo();
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                els.generateBtn.disabled = false;
+                els.generateBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                els.statusContainer.classList.add('hidden');
+            }
+        });
+
+        // --- Video Compilation (Canvas + MediaRecorder) ---
+        async function compileVideo() {
+            const fps = parseInt(els.fpsSelect.value, 10);
+            const canvas = els.renderCanvas;
+            const ctx = canvas.getContext('2d');
+            
+            const stream = canvas.captureStream(fps);
+            const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+            const chunks = [];
+
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            
+            const compilationPromise = new Promise(resolve => {
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const videoUrl = URL.createObjectURL(blob);
+                    
+                    els.finalVideo.src = videoUrl;
+                    els.downloadBtn.href = videoUrl;
+                    els.downloadBtn.download = `ai-transition-${Date.now()}.webm`;
+                    els.downloadBtn.classList.remove('hidden');
+                    
+                    resolve();
+                };
+            });
+
+            recorder.start();
+
+            // Draw frames to canvas sequentially
+            const frameDurationMs = 1000 / fps;
+            for (let frameData of generatedFrames) {
+                const img = new Image();
+                await new Promise(res => {
+                    img.onload = res;
+                    img.src = frameData;
+                });
+                
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                await delay(frameDurationMs); // Hold frame for recorder
+            }
+
+            // Small buffer to ensure last frame is captured
+            await delay(frameDurationMs);
+            recorder.stop();
+            await compilationPromise;
+        }
+
+        // --- Error Display ---
+        function showError(msg) {
+            els.errorContainer.innerText = `Error: ${msg}`;
+            els.errorContainer.classList.remove('hidden');
+            console.error(msg);
+        }
+
+        // Add CSS animations
+        document.head.insertAdjacentHTML('beforeend', `<style>
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        </style>`);
+    </script>
+</body>
+</html>

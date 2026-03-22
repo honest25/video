@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Frame to Video Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-black text-white p-6">
+
+  <h1 class="text-3xl font-bold mb-6 text-center">🎬 Frame to Video AI Generator</h1>
+
+  <div class="grid grid-cols-2 gap-6">
+    
+    <!-- Start Frame -->
+    <div>
+      <label>Start Frame</label>
+      <input type="file" id="startFrame" class="mt-2">
+      <img id="startPreview" class="mt-2 w-full h-40 object-cover"/>
+    </div>
+
+    <!-- End Frame -->
+    <div>
+      <label>End Frame</label>
+      <input type="file" id="endFrame" class="mt-2">
+      <img id="endPreview" class="mt-2 w-full h-40 object-cover"/>
+    </div>
+
+  </div>
+
+  <div class="mt-6">
+    <textarea id="prompt" placeholder="Enter cinematic prompt..." class="w-full p-3 text-black"></textarea>
+  </div>
+
+  <div class="mt-4">
+    <input type="number" id="frames" value="10" class="text-black p-2" />
+    <button onclick="generateVideo()" class="bg-blue-500 px-4 py-2 ml-4">Generate Video</button>
+  </div>
+
+  <div id="framesContainer" class="grid grid-cols-5 gap-2 mt-6"></div>
+
+  <video id="video" controls class="mt-6 w-full"></video>
+
+<script>
+const API_KEY = "YOUR_GEMINI_API_KEY"; // ⚠️ replace
+
+// Preview images
+document.getElementById("startFrame").onchange = e => preview(e, "startPreview");
+document.getElementById("endFrame").onchange = e => preview(e, "endPreview");
+
+function preview(event, id){
+  const reader = new FileReader();
+  reader.onload = () => document.getElementById(id).src = reader.result;
+  reader.readAsDataURL(event.target.files[0]);
+}
+
+// Convert to base64
+function toBase64(file){
+  return new Promise((res)=>{
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result.split(",")[1]);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Gemini Image Generation (simplified)
+async function generateFrame(prompt){
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json"},
+    body: JSON.stringify({
+      contents:[{
+        parts:[{text: prompt}]
+      }]
+    })
+  });
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text;
+}
+
+// Main logic
+async function generateVideo(){
+  const startFile = document.getElementById("startFrame").files[0];
+  const endFile = document.getElementById("endFrame").files[0];
+  const prompt = document.getElementById("prompt").value;
+  const frameCount = document.getElementById("frames").value;
+
+  if(!startFile || !endFile) return alert("Upload both images");
+
+  const container = document.getElementById("framesContainer");
+  container.innerHTML = "Generating frames...";
+
+  let frames = [];
+
+  for(let i=1;i<=frameCount;i++){
+    let framePrompt = `
+    Create frame ${i} of ${frameCount}.
+    Smooth transition from start to end scene.
+    ${prompt}
+    `;
+
+    let imgUrl = "https://picsum.photos/300?random=" + i; // placeholder
+    frames.push(imgUrl);
+  }
+
+  // Display frames
+  container.innerHTML = "";
+  frames.forEach(f=>{
+    let img = document.createElement("img");
+    img.src = f;
+    img.className="w-full";
+    container.appendChild(img);
+  });
+
+  // Create Video
+  createVideo(frames);
+}
+
+// Canvas Video Maker
+function createVideo(frames){
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = 640;
+  canvas.height = 360;
+
+  const stream = canvas.captureStream(5);
+  const recorder = new MediaRecorder(stream);
+  let chunks = [];
+
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = ()=>{
+    const blob = new Blob(chunks, {type:"video/webm"});
+    document.getElementById("video").src = URL.createObjectURL(blob);
+  };
+
+  recorder.start();
+
+  let i=0;
+  function draw(){
+    if(i >= frames.length){
+      recorder.stop();
+      return;
+    }
+
+    let img = new Image();
+    img.src = frames[i];
+    img.onload = ()=>{
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      i++;
+      setTimeout(draw,200);
+    }
+  }
+
+  draw();
+}
+</script>
+
+</body>
+</html>
